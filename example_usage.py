@@ -112,7 +112,6 @@ tropical_weights = np.array(results_tropical['weights'])
 
 # 1. ВЫЧИСЛЯЕМ РАНГИ (1 = самый важный, N = наименее важный)
 def get_ranks(weights):
-    """Преобразует веса в ранги (1 = самый важный)"""
     sorted_indices = np.argsort(weights)[::-1]  
     ranks = np.zeros_like(sorted_indices, dtype=float)
     

@@ -1,15 +1,3 @@
-"""
-Unified GSD-IJ AHP Architecture
-Вариант A: Честная замена центра — все вычисления относительно центра
-
-Архитектура позволяет переключаться между методами расчёта центра:
-- WGMM (взвешенное геометрическое среднее)
-- RowSum (сумма строк)
-- TropicalCenter (тропический log-Чебышевский центр)
-
-Все формулы и вычисления остаются идентичными — меняется только способ получения центра.
-"""
-
 import numpy as np
 import pulp
 from typing import List, Tuple, Dict, Optional, Any, Literal
@@ -18,10 +6,6 @@ import json
 
 
 class GSDIJ_AHP:
-    """
-    GSD-IJ AHP с поддержкой разных методов расчёта центра (center_method).
-    """
-
     def __init__(self, debug_mode: bool = False, center_method: Literal["wgmm", "rowsum", "tropical"] = "wgmm", tropical_variant: Literal["best", "worst"] = "best"):
         """
         Args:
@@ -42,7 +26,7 @@ class GSDIJ_AHP:
         self.group_weights: Optional[np.ndarray] = None
         self.debug_mode = debug_mode
         
-        # === НОВОЕ: центр и метод расчёта ===
+        # центр и метод расчёта ===
         self.center_method = center_method.lower()
         self.center_matrix: Optional[np.ndarray] = None  # Вычисленный центр
         self.tropical_mu: Optional[float] = None  # Используется для tropical метода
@@ -55,10 +39,8 @@ class GSDIJ_AHP:
     
         if self.tropical_variant not in ["best", "worst"]:
             raise ValueError(f"Unknown tropical_variant: {tropical_variant}")
-    # ==================== LOADING ====================
 
     def load_from_json(self, filepath: str) -> None:
-        """Загрузка данных из JSON файла."""
         try:
             with open(filepath, 'r', encoding='utf-8') as f:
                 data = json.load(f)
@@ -145,8 +127,6 @@ class GSDIJ_AHP:
         except Exception as e:
             raise ValueError(f"Ошибка загрузки данных: {e}")
 
-    # ==================== ЦЕНТР: ТРИ МЕТОДА ====================
-
     def _compute_wgmm_center(self) -> np.ndarray:
         """
         Взвешенное геометрическое среднее (Weighted Geometric Mean Matrix).
@@ -215,9 +195,6 @@ class GSDIJ_AHP:
         return group_matrix
 
     def _compute_tropical_center(self) -> Tuple[np.ndarray, float]:
-        """
-        Тропический log-Чебышевский центр (Best и параметр му).
-        """
         n = self.n
         m = self.m
 
@@ -261,10 +238,6 @@ class GSDIJ_AHP:
         return C, mu
 
     def compute_center_matrix(self) -> np.ndarray:
-        """
-        Вычисляет матрицу центра в зависимости от center_method.
-        Результат сохраняется в self.center_matrix.
-        """
         if self.center_method == "wgmm":
             self.center_matrix = self._compute_wgmm_center()
         elif self.center_method == "rowsum":
@@ -276,13 +249,7 @@ class GSDIJ_AHP:
 
         return self.center_matrix
 
-    # ==================== DISPERSION (СКО) ====================
-
     def compute_geometric_std_matrix(self, center_matrix: np.ndarray) -> np.ndarray:
-        """
-        Вычисление матрицы геометрических стандартных отклонений относительно центра.
-        Формула одинакова для всех методов расчёта центра!
-        """
         std_matrix = np.ones((self.n, self.n))
         sum_alpha_sq = sum(a ** 2 for a in self.alpha_weights)
         denominator = max(1.0 - sum_alpha_sq, 1e-10)
@@ -301,13 +268,8 @@ class GSDIJ_AHP:
 
         return std_matrix
 
-    # ==================== ИНТЕРВАЛЫ ====================
 
     def compute_group_interval_matrix(self, lambda_val: float) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Вычисление интервальной групповой матрицы.
-        Формула одинакова — меняется только центр!
-        """
         if self.center_matrix is None:
             self.compute_center_matrix()
 
@@ -330,10 +292,8 @@ class GSDIJ_AHP:
 
         return lower_matrix, upper_matrix
 
-    # ==================== ИНДЕКСЫ ====================
 
     def compute_indeterminacy_index(self, lower_matrix: np.ndarray, upper_matrix: np.ndarray) -> float:
-        """Вычисление индекса неопределённости интервальной матрицы."""
         if self.n < 2:
             return 1.0
 
@@ -352,7 +312,6 @@ class GSDIJ_AHP:
         return 1.0
 
     def compute_group_satisfaction_index(self, lower_matrix: np.ndarray, upper_matrix: np.ndarray) -> float:
-        """Вычисление индекса групповой удовлетворённости (GSI)."""
         if self.n < 2:
             return 1.0
 
@@ -372,10 +331,8 @@ class GSDIJ_AHP:
 
         return total_satisfaction
 
-    # ==================== ОПТИМИЗАЦИЯ ЛЯМБДЫ ====================
 
     def solve_model_1(self, t: float = 3.0, s: float = 0.5, n_points: int = 1001) -> float:
-        """Оптимизация параметра лямбды."""
         lambdas = np.linspace(0.0, 1.0, n_points)
         feasible_lambdas = []
 
@@ -415,10 +372,7 @@ class GSDIJ_AHP:
 
         return lambda_fallback
 
-    # ==================== ВЕСА (FPP) ====================
-
     def solve_model_2_fpp(self, lower_matrix: np.ndarray, upper_matrix: np.ndarray) -> Tuple[np.ndarray, float]:
-        """Решение Model 2: метод нечёткого программирования предпочтений (FPP)."""
         prob = pulp.LpProblem("FPP_Weights", pulp.LpMaximize)
 
         c = pulp.LpVariable("c", lowBound=0.0, upBound=1.0)
@@ -444,7 +398,6 @@ class GSDIJ_AHP:
             raise RuntimeError(f"FPP не удался. Статус: {pulp.LpStatus[prob.status]}")
 
     def compute_weight_bounds(self, lower_matrix: np.ndarray, upper_matrix: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """Вычисление мин и макс возможных весов."""
         w_min = np.zeros(self.n, dtype=float)
         w_max = np.zeros(self.n, dtype=float)
 
@@ -479,13 +432,7 @@ class GSDIJ_AHP:
 
         return w_min, w_max
 
-    # ==================== ПОЛНЫЙ АНАЛИЗ ====================
-
     def run_complete_analysis(self, t: float = 3.0, s: float = 0.5) -> Dict:
-        """
-        Запуск полного анализа (применяется центр → СКО → интервалы → веса).
-        Все вычисления унифицированы!
-        """
         # 1. Вычисляем матрицу центра
         print(f"\n1. Вычисление центра (метод: {self.center_method.upper()})...")
         print("-" * 50)
@@ -585,9 +532,6 @@ class GSDIJ_AHP:
             print(f"Ошибка в FPP: {e}")
             raise
 
-    # ==================== TROPICAL HELPERS ====================
-    # (для метода tropical)
-
     @staticmethod
     def _max_times_matmul(X: np.ndarray, Y: np.ndarray) -> np.ndarray:
         n = X.shape[0]
@@ -685,7 +629,6 @@ class GSDIJ_AHP:
         return float(lam)
 
     def save_interval_and_ranking(self, filepath: str, interval_matrix: Optional[tuple] = None) -> Dict[str, Any]:
-        """Сохранение результатов в JSON."""
         if interval_matrix is None:
             interval_matrix = self.group_interval_matrix
 
@@ -723,37 +666,3 @@ class GSDIJ_AHP:
             json.dump(payload, f, ensure_ascii=False, indent=2)
 
         return payload
-
-
-# # ==================== ПРИМЕР ИСПОЛЬЗОВАНИЯ ====================
-
-# if __name__ == "__main__":
-#     import sys
-
-#     # Тестируем все три метода
-#     methods = ["wgmm", "rowsum", "tropical"]
-    
-#     for method in methods:
-#         print(f"\n{'='*70}")
-#         print(f"ТЕСТ: center_method = '{method}'")
-#         print(f"{'='*70}")
-        
-#         try:
-#             gsd = GSDIJ_AHP(debug_mode=True, center_method=method)
-#             gsd.load_from_json("data/pcm_output.json")
-            
-#             results = gsd.run_complete_analysis(t=5, s=0.3)
-#             gsd.save_interval_and_ranking(f"results_unified_{method}.json")
-            
-#             print(f"\n✓ Метод '{method}' выполнен успешно!")
-#             print(f"Оптимальный λ: {results['lambda_opt']:.4f}")
-#             print(f"Индекс неопределённости: {results['U']:.4f}")
-#             print(f"Индекс удовлетворённости: {results['GSI']:.4f}")
-            
-#         except FileNotFoundError as e:
-#             print(f"⚠ Файл не найден: {e}")
-#             print("Убедитесь, что файл 'data/pcm_output.json' существует.")
-#         except Exception as e:
-#             print(f"✗ Ошибка при методе '{method}': {e}")
-#             import traceback
-#             traceback.print_exc()
